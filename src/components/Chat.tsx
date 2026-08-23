@@ -979,7 +979,7 @@ export function Chat({ session }: { session: Session }) {
               {/* Marca d'água incorporada */}
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-0">
                 <img 
-                  src="./src/assets/logo.png" 
+                  src="../src/assets/logo.png" 
                   alt="Marca d'água" 
                   className="w-[380px] md:w-[500px] h-auto object-contain opacity-[0.6] filter drop-shadow-[0_0_20px_rgba(34,197,94,0.4)]"
                 />
