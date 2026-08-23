@@ -202,11 +202,8 @@ export function Chat({ session }: { session: Session }) {
     if ('Notification' in window && Notification.permission === 'default') {
       Notification.requestPermission();
     }
-
   }, [fetchMyProfile, fetchUsers, fetchGroups, fetchLastMessages]);
 
-  // O stream só deve ser encerrado quando o componente for desmontado.
-  // Não o encerre quando dados de grupos/perfil forem atualizados.
   useEffect(() => {
     return () => {
       const recorder = mediaRecorderRef.current;
@@ -637,7 +634,6 @@ export function Chat({ session }: { session: Session }) {
           console.warn('A gravação terminou sem dados de áudio.');
         }
 
-        // Pare o microfone somente depois de o MediaRecorder finalizar o Blob.
         stream.getTracks().forEach((track) => track.stop());
       };
 
@@ -651,7 +647,6 @@ export function Chat({ session }: { session: Session }) {
 
   const stopRecording = () => {
     if (mediaRecorderRef.current && isRecording) {
-      // O onstop encerra os tracks depois que o Blob for montado.
       mediaRecorderRef.current.stop();
       setIsRecording(false);
     }
@@ -730,13 +725,13 @@ export function Chat({ session }: { session: Session }) {
   );
 
   return (
-    <div className="flex h-screen bg-[#E5DDD5] font-sans overflow-hidden">
+    <div className="flex h-screen bg-slate-950 font-sans overflow-hidden text-slate-100">
       
-      {/* Sidebar */}
-      <div className={`w-full md:w-1/3 lg:w-1/4 flex-col border-r border-gray-300 bg-white ${isMobileChatView ? 'hidden md:flex' : 'flex'}`}>
+      {/* Sidebar Neon */}
+      <div className={`w-full md:w-1/3 lg:w-1/4 flex-col border-r border-cyan-500/30 bg-slate-900 shadow-[0_0_20px_rgba(6,182,212,0.15)] ${isMobileChatView ? 'hidden md:flex' : 'flex'}`}>
         
-        {/* Header Usuário */}
-        <div className="flex items-center justify-between bg-[#008069] p-4 text-white">
+        {/* Header Usuário Neon */}
+        <div className="flex items-center justify-between bg-slate-900 border-b border-cyan-500/30 p-4 text-cyan-400 shadow-[0_4px_20px_rgba(6,182,212,0.2)]">
           <div className="flex items-center space-x-3 truncate">
             <div className="relative group flex-shrink-0">
               {currentUser?.avatar_url ? (
@@ -744,17 +739,17 @@ export function Chat({ session }: { session: Session }) {
                   src={currentUser.avatar_url} 
                   alt="Perfil" 
                   onClick={() => setPreviewAvatar({ url: currentUser.avatar_url!, name: currentUser.full_name || 'Meu Perfil' })}
-                  className="h-10 w-10 rounded-full object-cover border border-teal-300 cursor-pointer hover:opacity-80 transition"
+                  className="h-10 w-10 rounded-full object-cover border-2 border-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.6)] cursor-pointer hover:opacity-80 transition"
                   title="Clique para ver a foto maior"
                 />
               ) : (
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-teal-800 font-bold border border-teal-400">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-800 font-bold border-2 border-emerald-400 text-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.6)]">
                   {session.user.email?.[0].toUpperCase()}
                 </div>
               )}
               <button
                 onClick={() => avatarInputRef.current?.click()}
-                className="absolute -bottom-1 -right-1 bg-white text-gray-700 p-0.5 rounded-full shadow hover:bg-gray-200 transition text-[10px]"
+                className="absolute -bottom-1 -right-1 bg-slate-800 text-cyan-300 border border-cyan-500/50 p-0.5 rounded-full shadow hover:bg-slate-700 transition text-[10px]"
                 title="Alterar Foto de Perfil"
               >
                 📷
@@ -769,33 +764,33 @@ export function Chat({ session }: { session: Session }) {
               onChange={handleAvatarUpload} 
             />
 
-            <span className="font-semibold text-sm truncate">
+            <span className="font-semibold text-sm truncate text-slate-200">
               {currentUser?.full_name || session.user.user_metadata?.full_name || session.user.email}
             </span>
           </div>
 
           <button
             onClick={() => supabase.auth.signOut()}
-            className="text-xs bg-teal-800 hover:bg-teal-900 px-2.5 py-1.5 rounded transition ml-2"
+            className="text-xs bg-slate-800 border border-red-500/40 text-red-400 hover:bg-red-950/40 hover:shadow-[0_0_10px_rgba(239,68,68,0.5)] px-2.5 py-1.5 rounded transition ml-2 font-medium"
           >
             Sair
           </button>
         </div>
 
         {/* Header Grupos */}
-        <div className="p-3 border-b bg-gray-50 flex justify-between items-center">
-          <span className="text-xs font-bold text-gray-500 uppercase">Grupos</span>
+        <div className="p-3 border-b border-slate-800 bg-slate-900/50 flex justify-between items-center">
+          <span className="text-xs font-bold text-yellow-400 tracking-wider shadow-[0_0_8px_rgba(250,204,21,0.4)]">GRUPOS</span>
           <button
             onClick={() => setIsModalOpen(true)}
-            className="text-xs bg-[#008069] hover:bg-[#006e5a] text-white font-semibold px-2.5 py-1 rounded shadow transition flex items-center gap-1"
+            className="text-xs bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold px-3 py-1 rounded shadow-[0_0_12px_rgba(52,211,153,0.5)] transition flex items-center gap-1"
           >
             <span>+</span> Criar Grupo
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto divide-y divide-slate-800/60">
           {sortedGroups.length === 0 ? (
-            <p className="p-3 text-xs text-gray-400 text-center">Nenhum grupo criado ainda.</p>
+            <p className="p-3 text-xs text-slate-500 text-center">Nenhum grupo criado ainda.</p>
           ) : (
             sortedGroups.map((group) => {
               const chatKey = `group_${group.id}`;
@@ -806,8 +801,8 @@ export function Chat({ session }: { session: Session }) {
                 <div
                   key={group.id}
                   onClick={() => handleSelectChat({ type: 'group', id: group.id, name: group.name, created_by: group.created_by, avatar_url: group.avatar_url ?? undefined })}
-                  className={`flex items-center gap-3 p-3.5 cursor-pointer border-b hover:bg-gray-100 transition ${
-                    isActive ? 'bg-gray-200' : ''
+                  className={`flex items-center gap-3 p-3.5 cursor-pointer transition hover:bg-slate-800/60 ${
+                    isActive ? 'bg-cyan-950/40 border-l-4 border-cyan-400 shadow-[inset_0_0_15px_rgba(6,182,212,0.15)]' : ''
                   }`}
                 >
                   {group.avatar_url ? (
@@ -818,31 +813,31 @@ export function Chat({ session }: { session: Session }) {
                         e.stopPropagation();
                         setPreviewAvatar({ url: group.avatar_url!, name: group.name });
                       }}
-                      className="h-11 w-11 rounded-full object-cover border flex-shrink-0 hover:opacity-80 transition"
+                      className="h-11 w-11 rounded-full object-cover border border-cyan-500/50 shadow-[0_0_8px_rgba(6,182,212,0.4)] flex-shrink-0 hover:opacity-80 transition"
                       title="Clique para ver a foto maior"
                     />
                   ) : (
-                    <div className="flex h-11 w-11 items-center justify-center rounded-full bg-teal-600 text-white font-bold text-lg flex-shrink-0">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-full bg-cyan-950 text-cyan-400 border border-cyan-500/40 font-bold text-lg flex-shrink-0 shadow-[0_0_8px_rgba(6,182,212,0.3)]">
                       👨‍👩‍👧‍👦
                     </div>
                   )}
 
                   <div className="flex-1 min-w-0">
-                    <h3 className={`text-sm truncate ${hasUnread ? 'font-black text-[#008069]' : 'font-bold text-gray-800'}`}>
+                    <h3 className={`text-sm truncate ${hasUnread ? 'font-black text-yellow-400 shadow-[0_0_6px_rgba(250,204,21,0.4)]' : 'font-bold text-slate-200'}`}>
                       {group.name}
                     </h3>
-                    <p className={`text-xs truncate ${hasUnread ? 'font-bold text-gray-900' : 'text-gray-500'}`}>
+                    <p className={`text-xs truncate ${hasUnread ? 'font-bold text-cyan-300' : 'text-slate-400'}`}>
                       {lastMessages[chatKey] || 'Nenhuma mensagem ainda'}
                     </p>
                   </div>
-                  {hasUnread && <div className="h-2.5 w-2.5 bg-[#25D366] rounded-full mr-2"></div>}
+                  {hasUnread && <div className="h-2.5 w-2.5 bg-emerald-400 rounded-full mr-2 shadow-[0_0_10px_rgba(52,211,153,0.9)] animate-pulse"></div>}
                 </div>
               );
             })
           )}
 
-          <div className="p-3 bg-gray-50 text-xs font-bold text-gray-500 uppercase border-t">
-            Conversas Privadas
+          <div className="p-3 bg-slate-900/50 text-xs font-bold text-yellow-400 tracking-wider border-t border-slate-800 shadow-[0_0_8px_rgba(250,204,21,0.4)]">
+            CONVERSAS PRIVADAS
           </div>
 
           {sortedUsers.map((user) => {
@@ -854,8 +849,8 @@ export function Chat({ session }: { session: Session }) {
               <div
                 key={user.id}
                 onClick={() => handleSelectChat({ type: 'direct', id: user.id, name: user.full_name, avatar_url: user.avatar_url })}
-                className={`flex items-center gap-3 p-3.5 cursor-pointer border-b hover:bg-gray-100 transition ${
-                  isActive ? 'bg-gray-200' : ''
+                className={`flex items-center gap-3 p-3.5 cursor-pointer transition hover:bg-slate-800/60 ${
+                  isActive ? 'bg-cyan-950/40 border-l-4 border-cyan-400 shadow-[inset_0_0_15px_rgba(6,182,212,0.15)]' : ''
                 }`}
               >
                 {user.avatar_url ? (
@@ -866,24 +861,24 @@ export function Chat({ session }: { session: Session }) {
                       e.stopPropagation();
                       setPreviewAvatar({ url: user.avatar_url!, name: user.full_name });
                     }}
-                    className="h-11 w-11 rounded-full object-cover border flex-shrink-0 hover:opacity-80 transition"
+                    className="h-11 w-11 rounded-full object-cover border border-cyan-500/50 shadow-[0_0_8px_rgba(6,182,212,0.4)] flex-shrink-0 hover:opacity-80 transition"
                     title="Clique para ver a foto maior"
                   />
                 ) : (
-                  <div className="flex h-11 w-11 items-center justify-center rounded-full bg-gray-400 text-white font-bold text-md flex-shrink-0">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-full bg-slate-800 text-cyan-400 border border-cyan-500/30 font-bold text-md flex-shrink-0 shadow-[0_0_8px_rgba(6,182,212,0.3)]">
                     {user.full_name ? user.full_name[0].toUpperCase() : '👤'}
                   </div>
                 )}
 
                 <div className="flex-1 min-w-0">
-                  <h3 className={`text-sm truncate ${hasUnread ? 'font-black text-[#008069]' : 'font-semibold text-gray-800'}`}>
+                  <h3 className={`text-sm truncate ${hasUnread ? 'font-black text-yellow-400 shadow-[0_0_6px_rgba(250,204,21,0.4)]' : 'font-semibold text-slate-200'}`}>
                     {user.full_name || 'Familiar'}
                   </h3>
-                  <p className={`text-xs truncate ${hasUnread ? 'font-bold text-gray-900' : 'text-gray-500'}`}>
+                  <p className={`text-xs truncate ${hasUnread ? 'font-bold text-cyan-300' : 'text-slate-400'}`}>
                     {lastMessages[chatKey] || 'Nenhuma mensagem ainda'}
                   </p>
                 </div>
-                {hasUnread && <div className="h-2.5 w-2.5 bg-[#25D366] rounded-full mr-2"></div>}
+                {hasUnread && <div className="h-2.5 w-2.5 bg-emerald-400 rounded-full mr-2 shadow-[0_0_10px_rgba(52,211,153,0.9)] animate-pulse"></div>}
               </div>
             );
           })}
@@ -894,11 +889,11 @@ export function Chat({ session }: { session: Session }) {
       <div className={`flex-1 flex-col h-full w-full ${isMobileChatView ? 'flex' : 'hidden md:flex'}`}>
         {activeChat ? (
           <>
-            <div className="flex items-center justify-between bg-[#008069] px-4 py-3 text-white shadow-md z-10">
+            <div className="flex items-center justify-between bg-slate-900 border-b border-cyan-500/30 px-4 py-3 text-cyan-400 shadow-[0_4px_20px_rgba(6,182,212,0.2)] z-10">
               <div className="flex items-center gap-3 min-w-0">
                 <button
                   onClick={() => setIsMobileChatView(false)}
-                  className="md:hidden p-1 hover:bg-teal-700 rounded-full transition"
+                  className="md:hidden p-1 hover:bg-slate-800 rounded-full transition text-cyan-400"
                 >
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
@@ -912,17 +907,17 @@ export function Chat({ session }: { session: Session }) {
                         src={activeChat.avatar_url} 
                         alt={activeChat.name} 
                         onClick={() => setPreviewAvatar({ url: activeChat.avatar_url!, name: activeChat.name })}
-                        className="h-9 w-9 rounded-full object-cover border border-teal-200 cursor-pointer hover:opacity-80 transition"
+                        className="h-9 w-9 rounded-full object-cover border border-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.5)] cursor-pointer hover:opacity-80 transition"
                         title="Clique para ver a foto maior"
                       />
                     ) : (
-                      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-teal-800 text-white font-bold text-sm">
+                      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-800 text-cyan-400 border border-cyan-400 font-bold text-sm shadow-[0_0_8px_rgba(6,182,212,0.4)]">
                         👨‍👩‍👧‍👦
                       </div>
                     )}
                     <button
                       onClick={() => groupAvatarInputRef.current?.click()}
-                      className="absolute -bottom-1 -right-1 bg-white text-gray-700 p-0.5 rounded-full shadow hover:bg-gray-200 transition text-[9px]"
+                      className="absolute -bottom-1 -right-1 bg-slate-800 text-cyan-300 border border-cyan-500/50 p-0.5 rounded-full shadow hover:bg-slate-700 transition text-[9px]"
                       title="Alterar Foto do Grupo"
                     >
                       📷
@@ -940,18 +935,18 @@ export function Chat({ session }: { session: Session }) {
                     src={activeChat.avatar_url} 
                     alt={activeChat.name} 
                     onClick={() => setPreviewAvatar({ url: activeChat.avatar_url!, name: activeChat.name })}
-                    className="h-9 w-9 rounded-full object-cover border border-teal-200 cursor-pointer hover:opacity-80 transition"
+                    className="h-9 w-9 rounded-full object-cover border border-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.5)] cursor-pointer hover:opacity-80 transition"
                     title="Clique para ver a foto maior"
                   />
                 ) : (
-                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-teal-800 font-bold text-sm">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-800 text-cyan-400 border border-cyan-400 font-bold text-sm shadow-[0_0_8px_rgba(6,182,212,0.4)]">
                     {activeChat.name?.[0]?.toUpperCase() || '👤'}
                   </div>
                 )}
 
                 <div className="truncate">
-                  <h1 className="text-base font-bold truncate">{activeChat.name}</h1>
-                  <p className="text-xs text-teal-100">
+                  <h1 className="text-base font-bold truncate text-slate-100">{activeChat.name}</h1>
+                  <p className="text-xs text-cyan-300">
                     {activeChat.type === 'group' ? `${activeGroupMembers.length} participantes` : 'Conversa Privada'}
                   </p>
                 </div>
@@ -961,7 +956,7 @@ export function Chat({ session }: { session: Session }) {
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => setIsManageMembersOpen(true)}
-                    className="p-2 hover:bg-teal-700 rounded-lg transition text-teal-100 flex items-center gap-1 text-xs font-medium bg-teal-800/50"
+                    className="p-2 hover:bg-slate-800 rounded-lg transition text-cyan-300 flex items-center gap-1 text-xs font-medium bg-slate-800/80 border border-cyan-500/30 shadow-[0_0_8px_rgba(6,182,212,0.2)]"
                     title="Gerenciar Membros do Grupo"
                   >
                     <span>👥</span>
@@ -970,7 +965,7 @@ export function Chat({ session }: { session: Session }) {
 
                   <button
                     onClick={() => handleDeleteGroup(activeChat.id, activeChat.name)}
-                    className="p-2 hover:bg-teal-700 rounded-lg transition text-teal-100 hover:text-red-300 flex items-center gap-1 text-xs font-medium"
+                    className="p-2 hover:bg-slate-800 rounded-lg transition text-red-400 hover:text-red-300 flex items-center gap-1 text-xs font-medium border border-red-500/30"
                     title="Excluir este grupo"
                   >
                     <span>🗑️</span>
@@ -979,81 +974,97 @@ export function Chat({ session }: { session: Session }) {
               )}
             </div>
 
-            {/* Mensagens */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-[#E5DDD5]">
-              {messages.map((msg) => {
-                const isMe = msg.sender_id === session.user.id;
-                const date = new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            {/* Mensagens com Marca d'água Neon da Bandeira Brasileira */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-950 relative">
+              {/* Marca d'água incorporada */}
+             <div className="fixed inset-0 flex items-center justify-center pointer-events-none z-0">
+  <img 
+    src="./src/assets/logo.jpeg" 
+    alt="Marca d'água" 
+    className="w-[380px] md:w-[500px] h-auto object-contain opacity-[0.6] filter drop-shadow-[0_0_20px_rgba(34,197,94,0.4)]"
+  />
+</div>
+              {/* Listagem de Mensagens */}
+              <div className="relative z-10 space-y-3">
+                {messages.map((msg) => {
+                  const isMe = msg.sender_id === session.user.id;
+                  const date = new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-                return (
-                  <div key={msg.id} className={`flex flex-col group ${isMe ? 'items-end' : 'items-start'}`}>
-                    <div className="flex items-end gap-2 max-w-[85%] md:max-w-[75%]">
-                      {!isMe && msg.profiles?.avatar_url && (
-                        <img 
-                          src={msg.profiles.avatar_url} 
-                          alt="Avatar" 
-                          onClick={() => setPreviewAvatar({ url: msg.profiles!.avatar_url!, name: msg.profiles!.full_name })}
-                          className="h-7 w-7 rounded-full object-cover mb-1 cursor-pointer hover:opacity-80 transition" 
-                          title="Clique para ver a foto maior"
-                        />
-                      )}
+                  return (
+                    <div key={msg.id} className={`flex flex-col group ${isMe ? 'items-end' : 'items-start'}`}>
+                      <div className="flex items-end gap-2 max-w-[85%] md:max-w-[75%]">
+                        {!isMe && msg.profiles?.avatar_url && (
+                          <img 
+                            src={msg.profiles.avatar_url} 
+                            alt="Avatar" 
+                            onClick={() => setPreviewAvatar({ url: msg.profiles!.avatar_url!, name: msg.profiles!.full_name })}
+                            className="h-7 w-7 rounded-full object-cover mb-1 border border-cyan-500/40 cursor-pointer hover:opacity-80 transition" 
+                            title="Clique para ver a foto maior"
+                          />
+                        )}
 
-                      {isMe && (
-                        <button
-                          onClick={() => handleDeleteMessage(msg.id)}
-                          className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition p-1 hidden md:block"
-                          title="Apagar"
-                        >
-                          🗑️
-                        </button>
-                      )}
-
-                      <div className={`rounded-lg px-3 py-1.5 shadow text-sm relative ${isMe ? 'bg-[#D9FDD3]' : 'bg-white'}`}>
                         {isMe && (
                           <button
                             onClick={() => handleDeleteMessage(msg.id)}
-                            className="absolute -top-2 -left-2 bg-white border rounded-full w-5 h-5 flex items-center justify-center text-[10px] md:hidden"
+                            className="text-slate-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition p-1 hidden md:block"
+                            title="Apagar"
                           >
                             🗑️
                           </button>
                         )}
 
-                        {!isMe && activeChat.type === 'group' && (
-                          <p className="text-[11px] font-bold text-teal-700 mb-0.5">
-                            {msg.profiles?.full_name || 'Familiar'}
-                          </p>
-                        )}
+                        <div className={`rounded-xl px-3.5 py-2 shadow-lg text-sm relative border ${
+                          isMe 
+                            ? 'bg-emerald-950/70 border-emerald-500/50 text-emerald-100 shadow-[0_0_12px_rgba(52,211,153,0.15)]' 
+                            : 'bg-slate-900/90 border-cyan-500/30 text-slate-200 shadow-[0_0_12px_rgba(6,182,212,0.1)]'
+                        }`}>
+                          {isMe && (
+                            <button
+                              onClick={() => handleDeleteMessage(msg.id)}
+                              className="absolute -top-2 -left-2 bg-slate-900 border border-red-500/40 text-red-400 rounded-full w-5 h-5 flex items-center justify-center text-[10px] md:hidden shadow"
+                            >
+                              🗑️
+                            </button>
+                          )}
 
-                        {msg.image_url && (
-                          <a href={msg.image_url} target="_blank" rel="noopener noreferrer">
-                            <img src={msg.image_url} alt="imagem" className="max-h-60 rounded-md mb-1 cursor-pointer hover:opacity-90" />
-                          </a>
-                        )}
+                          {!isMe && activeChat.type === 'group' && (
+                            <p className="text-[11px] font-bold text-yellow-400 mb-0.5 shadow-[0_0_4px_rgba(250,204,21,0.3)]">
+                              {msg.profiles?.full_name || 'Familiar'}
+                            </p>
+                          )}
 
-                        {msg.audio_url && (
-                          <audio controls className="h-9 mt-1 mb-1 w-[200px]">
-                            <source src={msg.audio_url} type="audio/webm" />
-                          </audio>
-                        )}
+                          {msg.image_url && (
+                            <a href={msg.image_url} target="_blank" rel="noopener noreferrer">
+                              <img src={msg.image_url} alt="imagem" className="max-h-60 rounded-md mb-1 cursor-pointer hover:opacity-90 border border-slate-700" />
+                            </a>
+                          )}
 
-                        {msg.content && <p className="break-words">{msg.content}</p>}
-                        <span className="block text-[10px] text-gray-500 text-right mt-0.5">{date}</span>
+                          {msg.audio_url && (
+                            <audio controls className="h-9 mt-1 mb-1 w-[200px] accent-emerald-400">
+                              <source src={msg.audio_url} type="audio/webm" />
+                            </audio>
+                          )}
+
+                          {msg.content && <p className="break-words">{msg.content}</p>}
+                          <span className="block text-[10px] text-slate-400 text-right mt-1">{date}</span>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                );
-              })}
-              <div ref={messagesEndRef} />
+                  );
+                })}
+                <div ref={messagesEndRef} />
+              </div>
             </div>
 
-            {/* Input de Mensagem com Botão de Microfone Corrigido via Pointer Events */}
-            <div className="flex items-center gap-2 bg-[#F0F2F5] p-3 border-t border-gray-200">
+            {/* Input de Mensagem Neon */}
+            <div className="flex items-center gap-2 bg-slate-900 p-3 border-t border-cyan-500/30 shadow-[0_-4px_20px_rgba(6,182,212,0.1)] relative z-10">
               <input type="file" accept="image/*" ref={fileInputRef} className="hidden" onChange={handleImageUpload} />
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={isUploading || isRecording}
-                className="p-2 text-gray-500 hover:bg-gray-200 rounded-full"
+                className="p-2.5 text-cyan-400 hover:bg-slate-800 rounded-full transition border border-cyan-500/30 shadow-[0_0_8px_rgba(6,182,212,0.2)]"
+                title="Enviar Imagem"
               >
                 📷
               </button>
@@ -1064,27 +1075,29 @@ export function Chat({ session }: { session: Session }) {
                   value={isRecording ? 'Gravando áudio...' : newMessage}
                   onChange={(e) => setNewMessage(e.target.value)}
                   disabled={isRecording}
-                  placeholder="Mensagem..."
-                  className="flex-1 rounded-full border border-gray-300 px-4 py-2 text-sm focus:outline-none"
+                  placeholder="Digite sua mensagem futurista..."
+                  className="flex-1 rounded-full border border-cyan-500/40 bg-slate-950 px-4 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-400 focus:shadow-[0_0_12px_rgba(6,182,212,0.4)] transition"
                 />
 
                 {newMessage.trim() ? (
-                  <button type="submit" className="bg-[#008069] text-white p-2 rounded-full">
+                  <button type="submit" className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold p-2.5 rounded-full shadow-[0_0_12px_rgba(52,211,153,0.6)] transition">
                     ➤
                   </button>
                 ) : (
                   <button
                     type="button"
-                                        onMouseDown={startRecording}
+                    onMouseDown={startRecording}
                     onMouseUp={stopRecording}
                     onTouchStart={startRecording}
                     onTouchEnd={stopRecording}
-
                     disabled={isUploading}
                     aria-label={isRecording ? 'Solte para enviar o áudio' : 'Segure para gravar áudio'}
-                    className={`p-2 rounded-full text-white select-none touch-none transition-colors ${
-                      isRecording ? 'bg-red-500 animate-pulse' : 'bg-[#008069]'
+                    className={`p-2.5 rounded-full text-slate-950 select-none touch-none transition-all ${
+                      isRecording 
+                        ? 'bg-red-500 text-white animate-pulse shadow-[0_0_20px_rgba(239,68,68,0.9)]' 
+                        : 'bg-emerald-400 hover:bg-emerald-300 font-bold shadow-[0_0_12px_rgba(52,211,153,0.6)]'
                     } ${isUploading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    title="Segure para gravar áudio"
                   >
                     🎤
                   </button>
@@ -1093,7 +1106,7 @@ export function Chat({ session }: { session: Session }) {
             </div>
           </>
         ) : (
-          <div className="flex-1 flex items-center justify-center text-gray-400">
+          <div className="flex-1 flex items-center justify-center text-slate-500 bg-slate-950">
             Selecione uma conversa ou crie um grupo para começar.
           </div>
         )}
@@ -1102,24 +1115,24 @@ export function Chat({ session }: { session: Session }) {
       {/* Modal Foto de Perfil */}
       {previewAvatar && (
         <div 
-          className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 cursor-pointer"
+          className="fixed inset-0 bg-black/85 z-50 flex items-center justify-center p-4 cursor-pointer backdrop-blur-sm"
           onClick={() => setPreviewAvatar(null)}
         >
           <div 
-            className="relative max-w-lg w-full bg-gray-900 rounded-2xl overflow-hidden shadow-2xl flex flex-col items-center p-4 cursor-default border border-gray-800"
+            className="relative max-w-lg w-full bg-slate-900 rounded-2xl overflow-hidden shadow-[0_0_30px_rgba(6,182,212,0.3)] flex flex-col items-center p-4 cursor-default border border-cyan-500/40"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="w-full flex justify-between items-center mb-3 px-1">
-              <span className="font-semibold text-white text-sm truncate">{previewAvatar.name}</span>
+              <span className="font-semibold text-cyan-300 text-sm truncate">{previewAvatar.name}</span>
               <button
                 onClick={() => setPreviewAvatar(null)}
-                className="text-gray-400 hover:text-white text-2xl font-bold leading-none p-1 transition"
+                className="text-slate-400 hover:text-white text-2xl font-bold leading-none p-1 transition"
               >
                 &times;
               </button>
             </div>
 
-            <div className="w-full flex items-center justify-center overflow-hidden rounded-xl bg-black max-h-[75vh]">
+            <div className="w-full flex items-center justify-center overflow-hidden rounded-xl bg-slate-950 max-h-[75vh] border border-slate-800">
               <img
                 src={previewAvatar.url}
                 alt={previewAvatar.name}
@@ -1132,46 +1145,46 @@ export function Chat({ session }: { session: Session }) {
 
       {/* Modal Criar Grupo */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-5">
-            <h2 className="text-lg font-bold text-gray-800 mb-4">Criar Novo Grupo</h2>
+        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-slate-900 border border-cyan-500/40 rounded-xl shadow-[0_0_25px_rgba(6,182,212,0.25)] w-full max-w-md p-5 text-slate-100">
+            <h2 className="text-lg font-bold text-yellow-400 mb-4 shadow-[0_0_6px_rgba(250,204,21,0.3)]">Criar Novo Grupo</h2>
             
             <form onSubmit={handleCreateGroup}>
               <div className="mb-4">
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Nome do Grupo</label>
+                <label className="block text-xs font-semibold text-cyan-300 mb-1">Nome do Grupo</label>
                 <input
                   type="text"
                   value={groupName}
                   onChange={(e) => setGroupName(e.target.value)}
                   placeholder="Ex: Almoço de Domingo, Viagem..."
-                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:border-teal-600"
+                  className="w-full border border-cyan-500/40 bg-slate-950 rounded px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-cyan-400 focus:shadow-[0_0_10px_rgba(6,182,212,0.3)]"
                   required
                 />
               </div>
 
               <div className="mb-4">
-                <label className="block text-xs font-semibold text-gray-600 mb-1">Foto do Grupo (Opcional)</label>
+                <label className="block text-xs font-semibold text-cyan-300 mb-1">Foto do Grupo (Opcional)</label>
                 <input
                   type="file"
                   accept="image/*"
                   onChange={(e) => setGroupAvatarFile(e.target.files?.[0] || null)}
-                  className="w-full text-xs text-gray-500 file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-teal-50 file:text-teal-700 hover:file:bg-teal-100"
+                  className="w-full text-xs text-slate-400 file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-cyan-950 file:text-cyan-300 hover:file:bg-cyan-900 border border-slate-800 rounded bg-slate-950"
                 />
               </div>
 
               <div className="mb-4">
-                <label className="block text-xs font-semibold text-gray-600 mb-2">Selecione os Participantes</label>
-                <div className="max-h-48 overflow-y-auto border rounded p-2 space-y-2 bg-gray-50">
+                <label className="block text-xs font-semibold text-cyan-300 mb-2">Selecione os Participantes</label>
+                <div className="max-h-48 overflow-y-auto border border-slate-800 rounded p-2 space-y-2 bg-slate-950">
                   {users.map((u) => (
-                    <label key={u.id} className="flex items-center gap-2 cursor-pointer text-sm text-gray-700 hover:bg-gray-100 p-1.5 rounded">
+                    <label key={u.id} className="flex items-center gap-2 cursor-pointer text-sm text-slate-200 hover:bg-slate-900 p-1.5 rounded transition">
                       <input
                         type="checkbox"
                         checked={selectedUserIds.includes(u.id)}
                         onChange={() => toggleUserSelection(u.id)}
-                        className="rounded text-teal-600 focus:ring-teal-500"
+                        className="rounded bg-slate-900 border-cyan-500 text-emerald-500 focus:ring-emerald-400"
                       />
                       {u.avatar_url && (
-                        <img src={u.avatar_url} alt="" className="h-6 w-6 rounded-full object-cover" />
+                        <img src={u.avatar_url} alt="" className="h-6 w-6 rounded-full object-cover border border-cyan-500/30" />
                       )}
                       <span>{u.full_name}</span>
                     </label>
@@ -1186,14 +1199,14 @@ export function Chat({ session }: { session: Session }) {
                     setIsModalOpen(false);
                     setGroupAvatarFile(null);
                   }}
-                  className="px-4 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-100 rounded"
+                  className="px-4 py-2 text-xs font-semibold text-slate-400 hover:bg-slate-800 rounded transition"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={isUploading}
-                  className="px-4 py-2 text-xs font-semibold bg-[#008069] text-white rounded hover:bg-[#006e5a] disabled:opacity-50"
+                  className="px-4 py-2 text-xs font-bold bg-emerald-500 text-slate-950 rounded hover:bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.5)] disabled:opacity-50 transition"
                 >
                   {isUploading ? 'Criando...' : 'Criar Grupo'}
                 </button>
@@ -1205,48 +1218,47 @@ export function Chat({ session }: { session: Session }) {
 
       {/* Modal Gerenciar Membros */}
       {isManageMembersOpen && activeChat?.type === 'group' && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-5 flex flex-col max-h-[85vh]">
+        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-slate-900 border border-cyan-500/40 rounded-xl shadow-[0_0_25px_rgba(6,182,212,0.25)] w-full max-w-md p-5 flex flex-col max-h-[85vh] text-slate-100">
             <div className="flex justify-between items-center mb-3">
-              <h2 className="text-lg font-bold text-gray-800">Participantes do Grupo</h2>
+              <h2 className="text-lg font-bold text-yellow-400 shadow-[0_0_6px_rgba(250,204,21,0.3)]">Participantes do Grupo</h2>
               <button
                 onClick={() => setIsManageMembersOpen(false)}
-                className="text-gray-400 hover:text-gray-600 text-xl font-bold"
+                className="text-slate-400 hover:text-white text-xl font-bold"
               >
                 &times;
               </button>
             </div>
 
             <div className="overflow-y-auto space-y-4 pr-1">
-              {/* Integrantes Atuais */}
               <div>
-                <h3 className="text-xs font-bold text-gray-500 uppercase mb-2">
+                <h3 className="text-xs font-bold text-cyan-400 tracking-wider uppercase mb-2">
                   Integrantes Atuais ({activeGroupMembers.length})
                 </h3>
                 {activeGroupMembers.length === 0 ? (
-                  <p className="text-xs text-gray-400 italic p-2 border rounded bg-gray-50 text-center">
+                  <p className="text-xs text-slate-500 italic p-2 border border-slate-800 rounded bg-slate-950 text-center">
                     Nenhum integrante encontrado.
                   </p>
                 ) : (
-                  <div className="space-y-2 border rounded p-2 bg-gray-50">
+                  <div className="space-y-2 border border-slate-800 rounded p-2 bg-slate-950">
                     {activeGroupMembers.map((member) => (
-                      <div key={member.id} className="flex items-center justify-between p-1.5 bg-white rounded shadow-sm">
+                      <div key={member.id} className="flex items-center justify-between p-1.5 bg-slate-900 border border-slate-800 rounded shadow-sm">
                         <div className="flex items-center gap-2 truncate">
                           {member.avatar_url ? (
-                            <img src={member.avatar_url} alt="" className="h-7 w-7 rounded-full object-cover" />
+                            <img src={member.avatar_url} alt="" className="h-7 w-7 rounded-full object-cover border border-cyan-500/40" />
                           ) : (
-                            <div className="h-7 w-7 rounded-full bg-teal-600 text-white flex items-center justify-center font-bold text-xs">
+                            <div className="h-7 w-7 rounded-full bg-cyan-950 text-cyan-400 border border-cyan-500/40 flex items-center justify-center font-bold text-xs">
                               {member.full_name?.[0]?.toUpperCase() || '👤'}
                             </div>
                           )}
-                          <span className="text-sm font-medium text-gray-800 truncate">
+                          <span className="text-sm font-medium text-slate-200 truncate">
                             {member.full_name} {member.id === session.user.id && '(Você)'}
                           </span>
                         </div>
 
                         <button
                           onClick={() => handleRemoveMemberFromGroup(member.id)}
-                          className="text-xs text-red-600 hover:bg-red-50 px-2 py-1 rounded border border-red-200 transition font-medium"
+                          className="text-xs text-red-400 hover:bg-red-950/40 px-2 py-1 rounded border border-red-500/30 transition font-medium"
                         >
                           {member.id === session.user.id ? 'Sair' : 'Remover'}
                         </button>
@@ -1256,31 +1268,30 @@ export function Chat({ session }: { session: Session }) {
                 )}
               </div>
 
-              {/* Adicionar ao Grupo */}
               <div>
-                <h3 className="text-xs font-bold text-gray-500 uppercase mb-2">Adicionar ao Grupo</h3>
+                <h3 className="text-xs font-bold text-cyan-400 tracking-wider uppercase mb-2">Adicionar ao Grupo</h3>
                 {availableUsersToAdd.length === 0 ? (
-                  <p className="text-xs text-gray-400 italic p-2 border rounded bg-gray-50 text-center">
+                  <p className="text-xs text-slate-500 italic p-2 border border-slate-800 rounded bg-slate-950 text-center">
                     Todos os contatos já estão no grupo.
                   </p>
                 ) : (
-                  <div className="space-y-2 border rounded p-2 bg-gray-50 max-h-40 overflow-y-auto">
+                  <div className="space-y-2 border border-slate-800 rounded p-2 bg-slate-950 max-h-40 overflow-y-auto">
                     {availableUsersToAdd.map((user) => (
-                      <div key={user.id} className="flex items-center justify-between p-1.5 bg-white rounded shadow-sm">
+                      <div key={user.id} className="flex items-center justify-between p-1.5 bg-slate-900 border border-slate-800 rounded shadow-sm">
                         <div className="flex items-center gap-2 truncate">
                           {user.avatar_url ? (
-                            <img src={user.avatar_url} alt="" className="h-7 w-7 rounded-full object-cover" />
+                            <img src={user.avatar_url} alt="" className="h-7 w-7 rounded-full object-cover border border-cyan-500/40" />
                           ) : (
-                            <div className="h-7 w-7 rounded-full bg-gray-400 text-white flex items-center justify-center font-bold text-xs">
+                            <div className="h-7 w-7 rounded-full bg-slate-800 text-cyan-400 border border-cyan-500/30 flex items-center justify-center font-bold text-xs">
                               {user.full_name?.[0]?.toUpperCase() || '👤'}
                             </div>
                           )}
-                          <span className="text-sm text-gray-800 truncate">{user.full_name}</span>
+                          <span className="text-sm text-slate-200 truncate">{user.full_name}</span>
                         </div>
 
                         <button
-                          onClick={() => handleAddMemberToGroup(user.id)}
-                          className="text-xs bg-[#008069] text-white hover:bg-[#006e5a] px-2.5 py-1 rounded transition font-medium"
+                           onClick={() => handleAddMemberToGroup(user.id)}
+                          className="text-xs bg-emerald-500 text-slate-950 font-bold hover:bg-emerald-400 px-2.5 py-1 rounded transition shadow-[0_0_8px_rgba(52,211,153,0.4)]"
                         >
                           + Adicionar
                         </button>
@@ -1294,7 +1305,7 @@ export function Chat({ session }: { session: Session }) {
             <div className="mt-4 flex justify-end">
               <button
                 onClick={() => setIsManageMembersOpen(false)}
-                className="px-4 py-1.5 text-xs font-semibold bg-gray-200 hover:bg-gray-300 text-gray-700 rounded transition"
+                className="px-4 py-1.5 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-cyan-500/30 rounded transition"
               >
                 Fechar
               </button>
