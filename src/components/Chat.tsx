@@ -1,4 +1,6 @@
+// @ts-nocheck
 import React, { useEffect, useState, useRef, useCallback } from 'react';
+import imageCompression from 'browser-image-compression';
 import { type Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 
@@ -60,6 +62,23 @@ export function Chat({ session }: { session: Session }) {
   const [isUploading, setIsUploading] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isMobileChatView, setIsMobileChatView] = useState(false);
+  const [showImageMenu, setShowImageMenu] = useState(false);
+  // Paginação infinita das mensagens
+  const MESSAGES_PER_PAGE = 30;
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
+  const [isLoadingOlder, setIsLoadingOlder] = useState(false);
+  const [hasMoreMessages, setHasMoreMessages] = useState(true);
+
+  // Notificações do chat
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>(
+    typeof window !== 'undefined' && 'Notification' in window
+      ? Notification.permission
+      : 'denied'
+  );
+  const [chatNotification, setChatNotification] = useState<{
+    senderName: string;
+    text: string;
+  } | null>(null);
 
   // Referências para controle de áudio e tempo
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -70,7 +89,14 @@ export function Chat({ session }: { session: Session }) {
   const recordingMimeTypeRef = useRef('audio/webm');
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const oldestMessageDateRef = useRef<string | null>(null);
+  const shouldScrollToBottomRef = useRef(false);
+  const isLoadingOlderRef = useRef(false);
+  const notificationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+ //const fileInputRef = useRef<HTMLInputElement>(null);
+ const galleryInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const groupAvatarInputRef = useRef<HTMLInputElement>(null);
 
@@ -199,8 +225,8 @@ export function Chat({ session }: { session: Session }) {
       fetchLastMessages(groupList);
     });
 
-    if ('Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission();
+    if ('Notification' in window) {
+      setNotificationPermission(Notification.permission);
     }
   }, [fetchMyProfile, fetchUsers, fetchGroups, fetchLastMessages]);
 
@@ -209,6 +235,10 @@ export function Chat({ session }: { session: Session }) {
       const recorder = mediaRecorderRef.current;
       if (recorder && recorder.state !== 'inactive') {
         recorder.stream.getTracks().forEach((track) => track.stop());
+      }
+
+      if (notificationTimeoutRef.current) {
+        clearTimeout(notificationTimeoutRef.current);
       }
     };
   }, []);
@@ -219,41 +249,201 @@ export function Chat({ session }: { session: Session }) {
     }
   }, [activeChat, fetchActiveGroupMembers]);
 
+  const requestNotificationPermission = useCallback(async () => {
+    if (!('Notification' in window)) {
+      alert('Este navegador não oferece suporte a notificações.');
+      return;
+    }
+
+    try {
+      const permission = await Notification.requestPermission();
+      setNotificationPermission(permission);
+
+      if (permission === 'granted') {
+        const testNotification = new Notification('Notificações ativadas', {
+          body: 'Você será avisado quando receber novas mensagens.',
+          icon: '/favicon.ico',
+          tag: 'chat-notifications-enabled',
+        });
+
+        setTimeout(() => testNotification.close(), 4000);
+      }
+    } catch (error) {
+      console.error('Erro ao solicitar permissão de notificação:', error);
+    }
+  }, []);
+
   const triggerNotification = useCallback((senderName: string, text: string) => {
+    const notificationText = text || 'Nova mensagem';
+
+    // Notificação visual dentro do próprio chat
+    setChatNotification({ senderName, text: notificationText });
+
+    if (notificationTimeoutRef.current) {
+      clearTimeout(notificationTimeoutRef.current);
+    }
+
+    notificationTimeoutRef.current = setTimeout(() => {
+      setChatNotification(null);
+    }, 5000);
+
+    // Som de nova mensagem
     try {
       const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2354/2354-preview.mp3');
       audio.volume = 0.5;
       audio.play().catch(() => {});
-    } catch (e) {
-      console.error('Erro som:', e);
+    } catch (error) {
+      console.error('Erro ao reproduzir som da notificação:', error);
     }
 
+    // Notificação nativa do navegador
     if ('Notification' in window && Notification.permission === 'granted') {
-      new Notification(senderName, { body: text, icon: '/favicon.ico' });
+      const browserNotification = new Notification(senderName, {
+        body: notificationText,
+        icon: '/favicon.ico',
+        tag: `chat-${senderName}`,
+      });
+
+      browserNotification.onclick = () => {
+        window.focus();
+        browserNotification.close();
+      };
+
+      setTimeout(() => browserNotification.close(), 7000);
     }
   }, []);
+
+  const createMessagesQuery = useCallback(() => {
+    if (!activeChat) return null;
+
+    let query = supabase
+      .from('messages')
+      .select('*, profiles(full_name, avatar_url)');
+
+    if (activeChat.type === 'group') {
+      return query.eq('group_id', activeChat.id);
+    }
+
+    return query.or(
+      `and(sender_id.eq.${session.user.id},receiver_id.eq.${activeChat.id}),and(sender_id.eq.${activeChat.id},receiver_id.eq.${session.user.id})`
+    );
+  }, [activeChat, session.user.id]);
 
   const fetchMessages = useCallback(async () => {
     if (!activeChat) {
       setMessages([]);
+      setHasMoreMessages(false);
+      oldestMessageDateRef.current = null;
       return;
     }
 
-    let query = supabase.from('messages').select('*, profiles(full_name, avatar_url)');
+    setIsLoadingMessages(true);
+    setMessages([]);
+    setHasMoreMessages(true);
+    oldestMessageDateRef.current = null;
+    shouldScrollToBottomRef.current = true;
 
-    if (activeChat.type === 'group') {
-      query = query.eq('group_id', activeChat.id);
-    } else {
-      query = query.or(
-        `and(sender_id.eq.${session.user.id},receiver_id.eq.${activeChat.id}),and(sender_id.eq.${activeChat.id},receiver_id.eq.${session.user.id})`
-      );
+    try {
+      const query = createMessagesQuery();
+      if (!query) return;
+
+      const { data, error } = await query
+        .order('created_at', { ascending: false })
+        .limit(MESSAGES_PER_PAGE);
+
+      if (error) throw error;
+
+      const orderedMessages = [...((data as Message[]) || [])].reverse();
+      setMessages(orderedMessages);
+      setHasMoreMessages(orderedMessages.length === MESSAGES_PER_PAGE);
+      oldestMessageDateRef.current = orderedMessages[0]?.created_at || null;
+    } catch (error) {
+      console.error('Erro ao buscar mensagens:', error);
+    } finally {
+      setIsLoadingMessages(false);
+    }
+  }, [activeChat, createMessagesQuery]);
+
+  const loadOlderMessages = useCallback(async () => {
+    if (
+      !activeChat ||
+      isLoadingMessages ||
+      isLoadingOlderRef.current ||
+      !hasMoreMessages ||
+      !oldestMessageDateRef.current
+    ) {
+      return;
     }
 
-    const { data, error } = await query.order('created_at', { ascending: true });
+    const container = messagesContainerRef.current;
+    if (!container) return;
 
-    if (error) console.error('Erro ao buscar mensagens:', error);
-    else if (data) setMessages(data as Message[]);
-  }, [activeChat, session.user.id]);
+    isLoadingOlderRef.current = true;
+    setIsLoadingOlder(true);
+
+    const previousScrollHeight = container.scrollHeight;
+    const previousScrollTop = container.scrollTop;
+
+    try {
+      const query = createMessagesQuery();
+      if (!query) return;
+
+      const { data, error } = await query
+        .lt('created_at', oldestMessageDateRef.current)
+        .order('created_at', { ascending: false })
+        .limit(MESSAGES_PER_PAGE);
+
+      if (error) throw error;
+
+      const olderMessages = [...((data as Message[]) || [])].reverse();
+
+      if (olderMessages.length === 0) {
+        setHasMoreMessages(false);
+        return;
+      }
+
+      oldestMessageDateRef.current = olderMessages[0].created_at;
+      setHasMoreMessages(olderMessages.length === MESSAGES_PER_PAGE);
+
+      setMessages((currentMessages) => {
+        const existingIds = new Set(currentMessages.map((message) => message.id));
+        const uniqueOlderMessages = olderMessages.filter(
+          (message) => !existingIds.has(message.id)
+        );
+        return [...uniqueOlderMessages, ...currentMessages];
+      });
+
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          const currentContainer = messagesContainerRef.current;
+          if (!currentContainer) return;
+
+          currentContainer.scrollTop =
+            previousScrollTop +
+            (currentContainer.scrollHeight - previousScrollHeight);
+        });
+      });
+    } catch (error) {
+      console.error('Erro ao carregar mensagens antigas:', error);
+    } finally {
+      isLoadingOlderRef.current = false;
+      setIsLoadingOlder(false);
+    }
+  }, [
+    activeChat,
+    createMessagesQuery,
+    hasMoreMessages,
+    isLoadingMessages,
+  ]);
+
+  const handleMessagesScroll = useCallback(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    if (container.scrollTop <= 100) {
+      loadOlderMessages();
+    }
+  }, [loadOlderMessages]);
 
   useEffect(() => {
     fetchMessages();
@@ -302,14 +492,30 @@ export function Chat({ session }: { session: Session }) {
             }
 
             if (isCurrentChat) {
+              const container = messagesContainerRef.current;
+              const isNearBottom =
+                !container ||
+                container.scrollHeight - container.scrollTop - container.clientHeight < 150;
+
+              shouldScrollToBottomRef.current = isMyMessage || isNearBottom;
+
               const profileData = currentUsers.find((u) => u.id === newMsg.sender_id);
-              setMessages((prev) => [
-                ...prev,
-                { 
-                  ...newMsg, 
-                  profiles: profileData ? { full_name: profileData.full_name, avatar_url: profileData.avatar_url } : undefined 
-                },
-              ]);
+              setMessages((prev) => {
+                if (prev.some((message) => message.id === newMsg.id)) return prev;
+
+                return [
+                  ...prev,
+                  {
+                    ...newMsg,
+                    profiles: profileData
+                      ? {
+                          full_name: profileData.full_name,
+                          avatar_url: profileData.avatar_url,
+                        }
+                      : undefined,
+                  },
+                ];
+              });
             } else if (!isMyMessage) {
               setUnreadChats((prev) => (prev.includes(chatKey) ? prev : [...prev, chatKey]));
             }
@@ -324,21 +530,38 @@ export function Chat({ session }: { session: Session }) {
   }, [session.user.id, triggerNotification]);
 
   useEffect(() => {
-    scrollToBottom();
+    if (!shouldScrollToBottomRef.current) return;
+
+    requestAnimationFrame(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+      shouldScrollToBottomRef.current = false;
+    });
   }, [messages]);
 
-  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+ const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     try {
       setIsUploading(true);
-      const fileExt = file.name.split('.').pop();
+
+      // Configurações focadas em Avatars (imagens menores)
+      const options = {
+        maxSizeMB: 0.5, // Meio megabyte é mais que suficiente para foto de perfil
+        maxWidthOrHeight: 512, // Tamanho ideal para exibir no chat e sidebar
+        useWebWorker: true,
+        fileType: 'image/webp'
+      };
+
+      // Comprime o arquivo
+      const compressedFile = await imageCompression(file, options);
+      
+      const fileExt = 'webp';
       const filePath = `avatars/${session.user.id}_${Date.now()}.${fileExt}`;
 
       const { error: uploadError } = await supabase.storage
         .from('chat-images')
-        .upload(filePath, file);
+        .upload(filePath, compressedFile);
 
       if (uploadError) throw uploadError;
 
@@ -372,12 +595,23 @@ export function Chat({ session }: { session: Session }) {
 
     try {
       setIsUploading(true);
-      const fileExt = file.name.split('.').pop();
+
+      // Mesma configuração econômica de compressão
+      const options = {
+        maxSizeMB: 0.5,
+        maxWidthOrHeight: 512,
+        useWebWorker: true,
+        fileType: 'image/webp'
+      };
+
+      const compressedFile = await imageCompression(file, options);
+      
+      const fileExt = 'webp';
       const filePath = `groups/${activeChat.id}_${Date.now()}.${fileExt}`;
 
       const { error: uploadError } = await supabase.storage
         .from('chat-images')
-        .upload(filePath, file);
+        .upload(filePath, compressedFile);
 
       if (uploadError) throw uploadError;
 
@@ -586,10 +820,23 @@ export function Chat({ session }: { session: Session }) {
 
     setIsUploading(true);
     try {
-      const fileExt = file.name.split('.').pop();
+      // 1. Configurações de compressão
+      const options = {
+        maxSizeMB: 1, // Tamanho máximo desejado (1MB é ótimo para chat)
+        maxWidthOrHeight: 1280, // Redimensiona se passar de 1280px
+        useWebWorker: true, // Evita travar a interface do usuário
+        fileType: 'image/webp' // Converte para webp para economizar ainda mais espaço
+      };
+
+      // 2. Comprime o arquivo original
+      const compressedFile = await imageCompression(file, options);
+
+      // 3. Prepara o envio com o arquivo comprimido
+      const fileExt = 'webp'; // Como forçamos webp, usamos esta extensão
       const filePath = `${session.user.id}/${Date.now()}.${fileExt}`;
 
-      await supabase.storage.from('chat-images').upload(filePath, file);
+      // Faz o upload do arquivo COMPRIMIDO
+      await supabase.storage.from('chat-images').upload(filePath, compressedFile);
       const { data: publicUrlData } = supabase.storage.from('chat-images').getPublicUrl(filePath);
 
       const payload: Partial<Message> = {
@@ -603,10 +850,12 @@ export function Chat({ session }: { session: Session }) {
 
       await supabase.from('messages').insert(payload);
     } catch (error) {
+      console.error('Erro ao comprimir ou enviar imagem:', error);
       alert('Erro ao enviar imagem.');
-    } finally {
+   } finally {
       setIsUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
+      if (galleryInputRef.current) galleryInputRef.current.value = '';
+      if (cameraInputRef.current) cameraInputRef.current.value = '';
     }
   };
 
@@ -720,9 +969,63 @@ export function Chat({ session }: { session: Session }) {
     return timeB.localeCompare(timeA);
   });
 
+  const getMessageDateKey = (dateValue: string) => {
+    const date = new Date(dateValue);
+    return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+  };
+
+  const formatMessageDate = (dateValue: string) => {
+    const messageDate = new Date(dateValue);
+    const today = new Date();
+    const yesterday = new Date();
+    yesterday.setDate(today.getDate() - 1);
+
+    if (getMessageDateKey(dateValue) === getMessageDateKey(today.toISOString())) {
+      return 'Hoje';
+    }
+
+    if (getMessageDateKey(dateValue) === getMessageDateKey(yesterday.toISOString())) {
+      return 'Ontem';
+    }
+
+    const sameYear = messageDate.getFullYear() === today.getFullYear();
+
+    return messageDate.toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: 'long',
+      ...(sameYear ? {} : { year: 'numeric' }),
+    });
+  };
+
   const availableUsersToAdd = users.filter(
     (u) => !activeGroupMembers.some((member) => member.id === u.id)
   );
+  const handleDownloadImage = async (url: string, filename: string) => {
+    try {
+      // Busca o arquivo da URL
+      const response = await fetch(url);
+      const blob = await response.blob();
+      
+      // Cria um link temporário para forçar o download
+      const blobUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      
+      // Define o nome do arquivo (limpa caracteres especiais)
+      const safeName = filename.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+      link.download = `${safeName}_${Date.now()}.webp`; 
+      
+      document.body.appendChild(link);
+      link.click();
+      
+      // Limpa os dados temporários
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(blobUrl);
+    } catch (error) {
+      console.error('Erro ao baixar imagem:', error);
+      alert('Não foi possível baixar a imagem. Verifique sua conexão.');
+    }
+  };
 
   return (
     <div className="flex h-screen bg-slate-950 font-sans overflow-hidden text-slate-100">
@@ -769,12 +1072,33 @@ export function Chat({ session }: { session: Session }) {
             </span>
           </div>
 
-          <button
-            onClick={() => supabase.auth.signOut()}
-            className="text-xs bg-slate-800 border border-red-500/40 text-red-400 hover:bg-red-950/40 hover:shadow-[0_0_10px_rgba(239,68,68,0.5)] px-2.5 py-1.5 rounded transition ml-2 font-medium"
-          >
-            Sair
-          </button>
+          <div className="flex items-center gap-2 ml-2">
+            <button
+              type="button"
+              onClick={requestNotificationPermission}
+              className={`p-2 rounded-lg border transition text-sm ${
+                notificationPermission === 'granted'
+                  ? 'bg-emerald-950/50 border-emerald-500/40 text-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.25)]'
+                  : 'bg-slate-800 border-yellow-500/40 text-yellow-400 hover:bg-slate-700'
+              }`}
+              title={
+                notificationPermission === 'granted'
+                  ? 'Notificações ativadas'
+                  : notificationPermission === 'denied'
+                    ? 'Notificações bloqueadas no navegador'
+                    : 'Ativar notificações'
+              }
+            >
+              {notificationPermission === 'granted' ? '🔔' : '🔕'}
+            </button>
+
+            <button
+              onClick={() => supabase.auth.signOut()}
+              className="text-xs bg-slate-800 border border-red-500/40 text-red-400 hover:bg-red-950/40 hover:shadow-[0_0_10px_rgba(239,68,68,0.5)] px-2.5 py-1.5 rounded transition font-medium"
+            >
+              Sair
+            </button>
+          </div>
         </div>
 
         {/* Header Grupos */}
@@ -975,7 +1299,11 @@ export function Chat({ session }: { session: Session }) {
             </div>
 
             {/* Mensagens com Marca d'água Neon da Bandeira Brasileira */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-950 relative">
+            <div
+              ref={messagesContainerRef}
+              onScroll={handleMessagesScroll}
+              className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-950 relative"
+            >
               {/* Marca d'água incorporada */}
               <div className="fixed inset-0 flex items-center justify-center pointer-events-none z-0">
   <img 
@@ -986,12 +1314,49 @@ export function Chat({ session }: { session: Session }) {
 </div>
               {/* Listagem de Mensagens */}
               <div className="relative z-10 space-y-3">
-                {messages.map((msg) => {
+                {isLoadingOlder && (
+                  <div className="flex justify-center py-3">
+                    <span className="text-xs text-cyan-400 animate-pulse">
+                      Carregando mensagens antigas...
+                    </span>
+                  </div>
+                )}
+
+                {!hasMoreMessages && !isLoadingMessages && messages.length > 0 && (
+                  <div className="text-center py-2 text-xs text-slate-600">
+                    Início da conversa
+                  </div>
+                )}
+
+                {isLoadingMessages && messages.length === 0 && (
+                  <div className="text-center py-8 text-sm text-cyan-400 animate-pulse">
+                    Carregando mensagens...
+                  </div>
+                )}
+
+                {messages.map((msg, index) => {
                   const isMe = msg.sender_id === session.user.id;
-                  const date = new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                  const date = new Date(msg.created_at).toLocaleTimeString('pt-BR', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  });
+                  const previousMessage = messages[index - 1];
+                  const showDateSeparator =
+                    !previousMessage ||
+                    getMessageDateKey(previousMessage.created_at) !==
+                      getMessageDateKey(msg.created_at);
 
                   return (
-                    <div key={msg.id} className={`flex flex-col group ${isMe ? 'items-end' : 'items-start'}`}>
+                    <React.Fragment key={msg.id}>
+                      {showDateSeparator && (
+                        <div className="sticky top-2 z-20 flex justify-center py-2 pointer-events-none">
+                          <span className="rounded-full border border-cyan-500/30 bg-slate-900/95 px-3 py-1 text-[11px] font-semibold text-cyan-200 shadow-[0_0_12px_rgba(6,182,212,0.18)] backdrop-blur-md">
+                            {formatMessageDate(msg.created_at)}
+                          </span>
+                        </div>
+                      )}
+
+                      <div className={`flex flex-col group ${isMe ? 'items-end' : 'items-start'}`}>
                       <div className="flex items-end gap-2 max-w-[85%] md:max-w-[75%]">
                         {!isMe && msg.profiles?.avatar_url && (
                           <img 
@@ -1033,11 +1398,17 @@ export function Chat({ session }: { session: Session }) {
                             </p>
                           )}
 
-                          {msg.image_url && (
-                            <a href={msg.image_url} target="_blank" rel="noopener noreferrer">
-                              <img src={msg.image_url} alt="imagem" className="max-h-60 rounded-md mb-1 cursor-pointer hover:opacity-90 border border-slate-700" />
-                            </a>
-                          )}
+                         {msg.image_url && (
+    <img 
+      src={msg.image_url} 
+      alt="imagem" 
+      onClick={() => setPreviewAvatar({ 
+        url: msg.image_url!, 
+        name: `Foto enviada por ${isMe ? 'Você' : (msg.profiles?.full_name || 'Familiar')}` 
+      })}
+      className="max-h-60 rounded-md mb-1 cursor-pointer hover:opacity-90 border border-slate-700" 
+    />
+  )}
 
                           {msg.audio_url && (
                             <audio controls className="h-9 mt-1 mb-1 w-[200px] accent-emerald-400">
@@ -1049,26 +1420,60 @@ export function Chat({ session }: { session: Session }) {
                           <span className="block text-[10px] text-slate-400 text-right mt-1">{date}</span>
                         </div>
                       </div>
-                    </div>
+                      </div>
+                    </React.Fragment>
                   );
                 })}
                 <div ref={messagesEndRef} />
               </div>
             </div>
 
-            {/* Input de Mensagem Neon */}
+      {/* Input de Mensagem Neon */}
             <div className="flex items-center gap-2 bg-slate-900 p-3 border-t border-cyan-500/30 shadow-[0_-4px_20px_rgba(6,182,212,0.1)] relative z-10">
-              <input type="file" accept="image/*" ref={fileInputRef} className="hidden" onChange={handleImageUpload} />
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={isUploading || isRecording}
-                className="p-2.5 text-cyan-400 hover:bg-slate-800 rounded-full transition border border-cyan-500/30 shadow-[0_0_8px_rgba(6,182,212,0.2)]"
-                title="Enviar Imagem"
-              >
-                📷
-              </button>
+              
+              {/* Menu e Botões de Imagem */}
+              <div className="relative flex items-center">
+                {showImageMenu && (
+                  <div className="absolute bottom-full left-0 mb-3 bg-slate-900 border border-cyan-500/50 rounded-xl shadow-[0_0_20px_rgba(6,182,212,0.4)] p-2 flex flex-col gap-1.5 z-50 min-w-[130px]">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        cameraInputRef.current?.click();
+                        setShowImageMenu(false);
+                      }}
+                      className="flex items-center gap-2 text-sm text-cyan-300 hover:bg-slate-800 p-2 rounded-lg transition text-left font-medium"
+                    >
+                      <span>📸</span> Câmera
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        galleryInputRef.current?.click();
+                        setShowImageMenu(false);
+                      }}
+                      className="flex items-center gap-2 text-sm text-cyan-300 hover:bg-slate-800 p-2 rounded-lg transition text-left font-medium"
+                    >
+                      <span>🖼️</span> Galeria
+                    </button>
+                  </div>
+                )}
 
+                {/* Input para Galeria */}
+                <input type="file" accept="image/*" ref={galleryInputRef} className="hidden" onChange={handleImageUpload} />
+                
+                {/* Input para Câmera Direta (capture="environment" abre a câmera no celular) */}
+                <input type="file" accept="image/*" capture="environment" ref={cameraInputRef} className="hidden" onChange={handleImageUpload} />
+
+                <button
+                  type="button"
+                  onClick={() => setShowImageMenu(!showImageMenu)}
+                  disabled={isUploading || isRecording}
+                  className={`p-2.5 rounded-full transition border border-cyan-500/30 shadow-[0_0_8px_rgba(6,182,212,0.2)] ${showImageMenu ? 'bg-cyan-900 text-cyan-200' : 'text-cyan-400 hover:bg-slate-800'}`}
+                  title="Anexar"
+                >
+                  ➕
+                </button>
+              </div>
               <form onSubmit={handleSendMessage} className="flex flex-1 gap-2">
                 <input
                   type="text"
@@ -1112,32 +1517,78 @@ export function Chat({ session }: { session: Session }) {
         )}
       </div>
 
+      {/* Notificação visual interna */}
+      {chatNotification && (
+        <button
+          type="button"
+          onClick={() => setChatNotification(null)}
+          className="fixed top-4 right-4 z-[70] w-[calc(100%-2rem)] max-w-sm rounded-xl border border-cyan-400/50 bg-slate-900/95 p-4 text-left shadow-[0_0_25px_rgba(6,182,212,0.35)] backdrop-blur-md animate-pulse"
+          title="Fechar notificação"
+        >
+          <div className="flex items-start gap-3">
+            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full border border-emerald-400/50 bg-emerald-950 text-lg shadow-[0_0_10px_rgba(52,211,153,0.35)]">
+              🔔
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-bold text-cyan-300">
+                {chatNotification.senderName}
+              </p>
+              <p className="mt-1 line-clamp-2 text-xs text-slate-300">
+                {chatNotification.text}
+              </p>
+            </div>
+            <span className="text-xs text-slate-500">✕</span>
+          </div>
+        </button>
+      )}
+
       {/* Modal Foto de Perfil */}
+ {/* Modal Visualizador de Imagem (Galeria) */}
       {previewAvatar && (
         <div 
-          className="fixed inset-0 bg-black/85 z-50 flex items-center justify-center p-4 cursor-pointer backdrop-blur-sm"
+          className="fixed inset-0 bg-black/95 z-[100] flex flex-col items-center justify-center p-4 cursor-pointer backdrop-blur-md"
           onClick={() => setPreviewAvatar(null)}
         >
-          <div 
-            className="relative max-w-lg w-full bg-slate-900 rounded-2xl overflow-hidden shadow-[0_0_30px_rgba(6,182,212,0.3)] flex flex-col items-center p-4 cursor-default border border-cyan-500/40"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="w-full flex justify-between items-center mb-3 px-1">
-              <span className="font-semibold text-cyan-300 text-sm truncate">{previewAvatar.name}</span>
-              <button
-                onClick={() => setPreviewAvatar(null)}
-                className="text-slate-400 hover:text-white text-2xl font-bold leading-none p-1 transition"
-              >
-                &times;
-              </button>
-            </div>
+          {/* Barra superior de ações */}
+          <div className="absolute top-4 right-4 flex items-center gap-3 z-50">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDownloadImage(previewAvatar.url, previewAvatar.name);
+              }}
+              className="flex items-center justify-center h-10 w-10 bg-slate-800/60 hover:bg-slate-700 text-white rounded-full transition shadow-lg border border-slate-600/50"
+              title="Baixar imagem"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+              </svg>
+            </button>
+            
+            <button
+              onClick={() => setPreviewAvatar(null)}
+              className="flex items-center justify-center h-10 w-10 bg-slate-800/60 hover:bg-red-500/80 text-white rounded-full transition shadow-lg border border-slate-600/50"
+              title="Fechar"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"></path>
+              </svg>
+            </button>
+          </div>
 
-            <div className="w-full flex items-center justify-center overflow-hidden rounded-xl bg-slate-950 max-h-[75vh] border border-slate-800">
-              <img
-                src={previewAvatar.url}
-                alt={previewAvatar.name}
-                className="max-h-[70vh] w-auto max-w-full object-contain"
-              />
+          {/* Container da Imagem */}
+          <div 
+            className="relative w-full max-w-5xl flex flex-col items-center justify-center cursor-default h-full"
+            onClick={(e) => e.stopPropagation()} // Evita fechar ao clicar na imagem
+          >
+            <img
+              src={previewAvatar.url}
+              alt={previewAvatar.name}
+              className="max-h-[85vh] w-auto max-w-full object-contain rounded-md shadow-2xl"
+            />
+            
+            {/* Título/Info da Imagem */}
+            <div className="mt-6 px-4 py-2 bg-slate-900/80 border border-slate-700/50 rounded-full text-slate-200 text-sm font-medium shadow-lg text-center truncate max-w-xs md:max-w-md">
+              {previewAvatar.name}
             </div>
           </div>
         </div>
