@@ -249,9 +249,35 @@ export function Chat({ session }: { session: Session }) {
     }
   }, [activeChat, fetchActiveGroupMembers]);
 
+  const showSystemNotification = useCallback(async (title: string, body: string, tag: string) => {
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+
+    try {
+      if ('serviceWorker' in navigator) {
+        const registration = await navigator.serviceWorker.ready;
+        await registration.showNotification(title, {
+          body,
+          icon: '/pwa-192x192.png',
+          badge: '/pwa-192x192.png',
+          tag,
+          data: { url: window.location.href },
+        });
+      } else {
+        const notification = new Notification(title, {
+          body,
+          icon: '/pwa-192x192.png',
+          tag,
+        });
+        setTimeout(() => notification.close(), 7000);
+      }
+    } catch (error) {
+      console.error('Erro ao exibir notificação do sistema:', error);
+    }
+  }, []);
+
   const requestNotificationPermission = useCallback(async () => {
     if (!('Notification' in window)) {
-      alert('Este navegador não oferece suporte a notificações.');
+      alert('Este dispositivo não oferece suporte a notificações web.');
       return;
     }
 
@@ -260,18 +286,19 @@ export function Chat({ session }: { session: Session }) {
       setNotificationPermission(permission);
 
       if (permission === 'granted') {
-        const testNotification = new Notification('Notificações ativadas', {
-          body: 'Você será avisado quando receber novas mensagens.',
-          icon: '/favicon.ico',
-          tag: 'chat-notifications-enabled',
-        });
-
-        setTimeout(() => testNotification.close(), 4000);
+        await showSystemNotification(
+          'Notificações ativadas',
+          'Você será avisado quando receber novas mensagens.',
+          'chat-notifications-enabled',
+        );
+      } else if (permission === 'denied') {
+        alert('As notificações estão bloqueadas. Abra as configurações de permissões deste aplicativo e permita Notificações.');
       }
     } catch (error) {
       console.error('Erro ao solicitar permissão de notificação:', error);
+      alert('Não foi possível solicitar notificações neste dispositivo. Verifique as permissões do aplicativo.');
     }
-  }, []);
+  }, [showSystemNotification]);
 
   const triggerNotification = useCallback((senderName: string, text: string) => {
     const notificationText = text || 'Nova mensagem';
@@ -296,22 +323,9 @@ export function Chat({ session }: { session: Session }) {
       console.error('Erro ao reproduzir som da notificação:', error);
     }
 
-    // Notificação nativa do navegador
-    if ('Notification' in window && Notification.permission === 'granted') {
-      const browserNotification = new Notification(senderName, {
-        body: notificationText,
-        icon: '/favicon.ico',
-        tag: `chat-${senderName}`,
-      });
-
-      browserNotification.onclick = () => {
-        window.focus();
-        browserNotification.close();
-      };
-
-      setTimeout(() => browserNotification.close(), 7000);
-    }
-  }, []);
+    // Notificação persistente: funciona melhor no modo PWA instalado.
+    void showSystemNotification(senderName, notificationText, `chat-${senderName}`);
+  }, [showSystemNotification]);
 
   const createMessagesQuery = useCallback(() => {
     if (!activeChat) return null;
@@ -861,36 +875,46 @@ export function Chat({ session }: { session: Session }) {
 
   const startRecording = async () => {
     try {
+      if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+        alert('O microfone só funciona em uma conexão HTTPS segura. Abra o aplicativo pelo endereço oficial.');
+        return;
+      }
+      if (!window.MediaRecorder) {
+        alert('Este dispositivo não oferece suporte à gravação de áudio.');
+        return;
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
+      const supportedTypes = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'];
+      const mimeType = supportedTypes.find((type) => MediaRecorder.isTypeSupported(type)) || '';
+      const mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      recordingMimeTypeRef.current = mediaRecorder.mimeType || mimeType || 'audio/webm';
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
 
       mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
-        }
+        if (event.data.size > 0) audioChunksRef.current.push(event.data);
       };
 
       mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        const audioBlob = new Blob(audioChunksRef.current, { type: recordingMimeTypeRef.current });
         audioChunksRef.current = [];
         mediaRecorderRef.current = null;
-
-        if (audioBlob.size > 0) {
-          await handleAudioUpload(audioBlob);
-        } else {
-          console.warn('A gravação terminou sem dados de áudio.');
-        }
-
         stream.getTracks().forEach((track) => track.stop());
+        if (audioBlob.size > 0) await handleAudioUpload(audioBlob);
       };
 
-      mediaRecorder.start();
+      mediaRecorder.start(250);
       setIsRecording(true);
     } catch (error) {
       console.error('Erro ao acessar o microfone:', error);
-      alert('Não foi possível acessar o microfone. Verifique as permissões do navegador.');
+      const name = error?.name;
+      const message = name === 'NotAllowedError'
+        ? 'O microfone está bloqueado. Abra as permissões do aplicativo/site e permita Microfone.'
+        : name === 'NotFoundError'
+          ? 'Nenhum microfone foi encontrado neste dispositivo.'
+          : 'Não foi possível acessar o microfone. Verifique se outro aplicativo está usando-o.';
+      alert(message);
     }
   };
 
@@ -1459,10 +1483,10 @@ export function Chat({ session }: { session: Session }) {
                 )}
 
                 {/* Input para Galeria */}
-                <input type="file" accept="image/*" ref={galleryInputRef} className="hidden" onChange={handleImageUpload} />
+                <input type="file" accept="image/*" ref={galleryInputRef} className="absolute h-px w-px opacity-0" onChange={handleImageUpload} />
                 
                 {/* Input para Câmera Direta (capture="environment" abre a câmera no celular) */}
-                <input type="file" accept="image/*" capture="environment" ref={cameraInputRef} className="hidden" onChange={handleImageUpload} />
+                <input type="file" accept="image/*" capture="environment" ref={cameraInputRef} className="absolute h-px w-px opacity-0" onChange={handleImageUpload} />
 
                 <button
                   type="button"
