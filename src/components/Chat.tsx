@@ -45,6 +45,7 @@ export function Chat({ session }: { session: Session }) {
   const [currentUser, setCurrentUser] = useState<Profile | null>(null);
   
   const [activeChat, setActiveChat] = useState<ActiveChat>(null);
+  const [sidebarTab, setSidebarTab] = useState<'conversas' | 'contatos'>('conversas');
   const [unreadChats, setUnreadChats] = useState<string[]>([]);
   const [lastMessages, setLastMessages] = useState<Record<string, string>>({});
   const [lastMessageTimes, setLastMessageTimes] = useState<Record<string, string>>({});
@@ -249,35 +250,18 @@ export function Chat({ session }: { session: Session }) {
     }
   }, [activeChat, fetchActiveGroupMembers]);
 
-  const showSystemNotification = useCallback(async (title: string, body: string, tag: string) => {
-    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  useEffect(() => {
+    const channel = supabase
+      .channel('public:profiles')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'profiles' }, () => fetchUsers())
+      .subscribe();
 
-    try {
-      if ('serviceWorker' in navigator) {
-        const registration = await navigator.serviceWorker.ready;
-        await registration.showNotification(title, {
-          body,
-          icon: '/pwa-192x192.png',
-          badge: '/pwa-192x192.png',
-          tag,
-          data: { url: window.location.href },
-        });
-      } else {
-        const notification = new Notification(title, {
-          body,
-          icon: '/pwa-192x192.png',
-          tag,
-        });
-        setTimeout(() => notification.close(), 7000);
-      }
-    } catch (error) {
-      console.error('Erro ao exibir notificação do sistema:', error);
-    }
-  }, []);
+    return () => { supabase.removeChannel(channel); };
+  }, [fetchUsers]);
 
   const requestNotificationPermission = useCallback(async () => {
     if (!('Notification' in window)) {
-      alert('Este dispositivo não oferece suporte a notificações web.');
+      alert('Este navegador não oferece suporte a notificações.');
       return;
     }
 
@@ -286,19 +270,18 @@ export function Chat({ session }: { session: Session }) {
       setNotificationPermission(permission);
 
       if (permission === 'granted') {
-        await showSystemNotification(
-          'Notificações ativadas',
-          'Você será avisado quando receber novas mensagens.',
-          'chat-notifications-enabled',
-        );
-      } else if (permission === 'denied') {
-        alert('As notificações estão bloqueadas. Abra as configurações de permissões deste aplicativo e permita Notificações.');
+        const testNotification = new Notification('Notificações ativadas', {
+          body: 'Você será avisado quando receber novas mensagens.',
+          icon: '/favicon.ico',
+          tag: 'chat-notifications-enabled',
+        });
+
+        setTimeout(() => testNotification.close(), 4000);
       }
     } catch (error) {
       console.error('Erro ao solicitar permissão de notificação:', error);
-      alert('Não foi possível solicitar notificações neste dispositivo. Verifique as permissões do aplicativo.');
     }
-  }, [showSystemNotification]);
+  }, []);
 
   const triggerNotification = useCallback((senderName: string, text: string) => {
     const notificationText = text || 'Nova mensagem';
@@ -323,9 +306,22 @@ export function Chat({ session }: { session: Session }) {
       console.error('Erro ao reproduzir som da notificação:', error);
     }
 
-    // Notificação persistente: funciona melhor no modo PWA instalado.
-    void showSystemNotification(senderName, notificationText, `chat-${senderName}`);
-  }, [showSystemNotification]);
+    // Notificação nativa do navegador
+    if ('Notification' in window && Notification.permission === 'granted') {
+      const browserNotification = new Notification(senderName, {
+        body: notificationText,
+        icon: '/favicon.ico',
+        tag: `chat-${senderName}`,
+      });
+
+      browserNotification.onclick = () => {
+        window.focus();
+        browserNotification.close();
+      };
+
+      setTimeout(() => browserNotification.close(), 7000);
+    }
+  }, []);
 
   const createMessagesQuery = useCallback(() => {
     if (!activeChat) return null;
@@ -875,46 +871,36 @@ export function Chat({ session }: { session: Session }) {
 
   const startRecording = async () => {
     try {
-      if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
-        alert('O microfone só funciona em uma conexão HTTPS segura. Abra o aplicativo pelo endereço oficial.');
-        return;
-      }
-      if (!window.MediaRecorder) {
-        alert('Este dispositivo não oferece suporte à gravação de áudio.');
-        return;
-      }
-
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const supportedTypes = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'];
-      const mimeType = supportedTypes.find((type) => MediaRecorder.isTypeSupported(type)) || '';
-      const mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
-      recordingMimeTypeRef.current = mediaRecorder.mimeType || mimeType || 'audio/webm';
+      const mediaRecorder = new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
 
       mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) audioChunksRef.current.push(event.data);
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
       };
 
       mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: recordingMimeTypeRef.current });
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
         audioChunksRef.current = [];
         mediaRecorderRef.current = null;
+
+        if (audioBlob.size > 0) {
+          await handleAudioUpload(audioBlob);
+        } else {
+          console.warn('A gravação terminou sem dados de áudio.');
+        }
+
         stream.getTracks().forEach((track) => track.stop());
-        if (audioBlob.size > 0) await handleAudioUpload(audioBlob);
       };
 
-      mediaRecorder.start(250);
+      mediaRecorder.start();
       setIsRecording(true);
     } catch (error) {
       console.error('Erro ao acessar o microfone:', error);
-      const name = error?.name;
-      const message = name === 'NotAllowedError'
-        ? 'O microfone está bloqueado. Abra as permissões do aplicativo/site e permita Microfone.'
-        : name === 'NotFoundError'
-          ? 'Nenhum microfone foi encontrado neste dispositivo.'
-          : 'Não foi possível acessar o microfone. Verifique se outro aplicativo está usando-o.';
-      alert(message);
+      alert('Não foi possível acessar o microfone. Verifique as permissões do navegador.');
     }
   };
 
@@ -987,11 +973,17 @@ export function Chat({ session }: { session: Session }) {
     return timeB.localeCompare(timeA);
   });
 
-  const sortedUsers = [...users].sort((a, b) => {
-    const timeA = lastMessageTimes[`user_${a.id}`] || '';
-    const timeB = lastMessageTimes[`user_${b.id}`] || '';
-    return timeB.localeCompare(timeA);
-  });
+  const usersWithConversation = users
+    .filter((user) => lastMessages[`user_${user.id}`] !== undefined)
+    .sort((a, b) => {
+      const timeA = lastMessageTimes[`user_${a.id}`] || '';
+      const timeB = lastMessageTimes[`user_${b.id}`] || '';
+      return timeB.localeCompare(timeA);
+    });
+
+  const usersWithoutConversation = users
+    .filter((user) => lastMessages[`user_${user.id}`] === undefined)
+    .sort((a, b) => (a.full_name || '').localeCompare(b.full_name || '', 'pt-BR'));
 
   const getMessageDateKey = (dateValue: string) => {
     const date = new Date(dateValue);
@@ -1136,6 +1128,18 @@ export function Chat({ session }: { session: Session }) {
           </button>
         </div>
 
+        <div className="grid grid-cols-2 border-b border-cyan-500/30 bg-slate-900/90">
+          <button type="button" onClick={() => setSidebarTab('conversas')} className={`px-4 py-3 text-xs font-bold uppercase tracking-wider transition ${sidebarTab === 'conversas' ? 'text-cyan-300 border-b-2 border-cyan-400 bg-cyan-950/30' : 'text-slate-500'}`}>
+            Conversas
+          </button>
+          <button type="button" onClick={() => setSidebarTab('contatos')} className={`px-4 py-3 text-xs font-bold uppercase tracking-wider transition ${sidebarTab === 'contatos' ? 'text-emerald-300 border-b-2 border-emerald-400 bg-emerald-950/20' : 'text-slate-500'}`}>
+            Contatos {usersWithoutConversation.length > 0 && <span className="ml-2 rounded-full bg-emerald-500/20 px-1.5 py-0.5 text-[10px] text-emerald-300">{usersWithoutConversation.length}</span>}
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto divide-y divide-slate-800/60">
+          {sidebarTab === 'conversas' ? (
+            <>
         <div className="flex-1 overflow-y-auto divide-y divide-slate-800/60">
           {sortedGroups.length === 0 ? (
             <p className="p-3 text-xs text-slate-500 text-center">Nenhum grupo criado ainda.</p>
@@ -1188,7 +1192,7 @@ export function Chat({ session }: { session: Session }) {
             CONVERSAS PRIVADAS
           </div>
 
-          {sortedUsers.map((user) => {
+          {usersWithConversation.map((user) => {
             const chatKey = `user_${user.id}`;
             const hasUnread = unreadChats.includes(chatKey);
             const isActive = activeChat?.type === 'direct' && activeChat.id === user.id;
@@ -1230,6 +1234,69 @@ export function Chat({ session }: { session: Session }) {
               </div>
             );
           })}
+        </div>
+      </div>
+
+
+            </>
+          ) : (
+            <>
+              <div className="p-4 border-b border-slate-800 bg-slate-900/50">
+                <p className="text-xs font-bold text-emerald-300 tracking-wider">CONTATOS</p>
+                <p className="mt-1 text-[11px] text-slate-500">Pessoas cadastradas que ainda não possuem conversa.</p>
+              </div>
+              {usersWithoutConversation.length === 0 ? (
+                <p className="p-8 text-center text-xs text-slate-500">Nenhum contato novo.</p>
+              ) : (
+                {usersWithoutConversation.map((user) => {
+            const chatKey = `user_${user.id}`;
+            const hasUnread = unreadChats.includes(chatKey);
+            const isActive = activeChat?.type === 'direct' && activeChat.id === user.id;
+
+            return (
+              <div
+                key={user.id}
+                onClick={() => handleSelectChat({ type: 'direct', id: user.id, name: user.full_name, avatar_url: user.avatar_url })}
+                className={`flex items-center gap-3 p-3.5 cursor-pointer transition hover:bg-slate-800/60 ${
+                  isActive ? 'bg-cyan-950/40 border-l-4 border-cyan-400 shadow-[inset_0_0_15px_rgba(6,182,212,0.15)]' : ''
+                }`}
+              >
+                {user.avatar_url ? (
+                  <img 
+                    src={user.avatar_url} 
+                    alt={user.full_name} 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setPreviewAvatar({ url: user.avatar_url!, name: user.full_name });
+                    }}
+                    className="h-11 w-11 rounded-full object-cover border border-cyan-500/50 shadow-[0_0_8px_rgba(6,182,212,0.4)] flex-shrink-0 hover:opacity-80 transition"
+                    title="Clique para ver a foto maior"
+                  />
+                ) : (
+                  <div className="flex h-11 w-11 items-center justify-center rounded-full bg-slate-800 text-cyan-400 border border-cyan-500/30 font-bold text-md flex-shrink-0 shadow-[0_0_8px_rgba(6,182,212,0.3)]">
+                    {user.full_name ? user.full_name[0].toUpperCase() : '👤'}
+                  </div>
+                )}
+
+                <div className="flex-1 min-w-0">
+                  <h3 className={`text-sm truncate ${'font-semibold text-slate-200'}`}>
+                    {user.full_name || 'Familiar'}
+                  </h3>
+                  <p className={`text-xs truncate ${'text-slate-500'}`}>
+                    {'Novo contato · clique para iniciar conversa'}
+                  </p>
+                </div>
+                {hasUnread && <div className="h-2.5 w-2.5 bg-emerald-400 rounded-full mr-2 shadow-[0_0_10px_rgba(52,211,153,0.9)] animate-pulse"></div>}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+
+              )}
+            </>
+          )}
         </div>
       </div>
 
@@ -1483,10 +1550,10 @@ export function Chat({ session }: { session: Session }) {
                 )}
 
                 {/* Input para Galeria */}
-                <input type="file" accept="image/*" ref={galleryInputRef} className="absolute h-px w-px opacity-0" onChange={handleImageUpload} />
+                <input type="file" accept="image/*" ref={galleryInputRef} className="hidden" onChange={handleImageUpload} />
                 
                 {/* Input para Câmera Direta (capture="environment" abre a câmera no celular) */}
-                <input type="file" accept="image/*" capture="environment" ref={cameraInputRef} className="absolute h-px w-px opacity-0" onChange={handleImageUpload} />
+                <input type="file" accept="image/*" capture="environment" ref={cameraInputRef} className="hidden" onChange={handleImageUpload} />
 
                 <button
                   type="button"
